@@ -16,17 +16,21 @@ struct StatsView: View {
                                  detail: "\(Int((stats.totalProgress * 100).rounded()))% of goal", symbol: "clock.fill")
                         StatTile(title: "Night", value: Fmt.duration(minutes: stats.nightMinutes),
                                  detail: "\(Int((stats.nightProgress * 100).rounded()))% of goal", symbol: "moon.fill", tint: Theme.night)
-                        StatTile(title: "Day", value: Fmt.duration(minutes: stats.dayMinutes), symbol: "sun.max.fill", tint: Theme.day)
+                        StatTile(title: "Day", value: Fmt.duration(minutes: stats.dayMinutes),
+                                 detail: stats.totalMinutes > 0 ? "\(Int((stats.dayMinutes / stats.totalMinutes * 100).rounded()))% of your time" : nil,
+                                 symbol: "sun.max.fill", tint: Theme.day)
                         StatTile(title: "Drives", value: "\(stats.driveCount)",
-                                 detail: "avg \(Fmt.duration(minutes: stats.averageMinutes))", symbol: "car.fill", tint: .green)
+                                 detail: "avg \(Fmt.duration(minutes: stats.averageMinutes))", symbol: "car.fill", tint: .secondary)
                         StatTile(title: "Distance", value: Fmt.distance(meters: stats.distanceMeters, unit: unit, decimals: 0),
-                                 symbol: "road.lanes", tint: .teal)
+                                 detail: stats.driveCount > 0 ? "avg \(Fmt.distance(meters: stats.distanceMeters / Double(stats.driveCount), unit: unit))" : nil,
+                                 symbol: "road.lanes", tint: .secondary)
                         StatTile(title: "Streak", value: "\(stats.currentStreak()) day\(stats.currentStreak() == 1 ? "" : "s")",
-                                 detail: "last 7 days: \(Fmt.duration(minutes: stats.minutes(inLast: 7)))", symbol: "flame.fill", tint: .orange)
+                                 detail: "last 7 days: \(Fmt.duration(minutes: stats.minutes(inLast: 7)))", symbol: "flame.fill", tint: .secondary)
                         StatTile(title: "Bad Weather", value: Fmt.duration(minutes: stats.adverseWeatherMinutes),
-                                 symbol: "cloud.rain.fill", tint: .cyan)
+                                 detail: stats.totalMinutes > 0 ? "\(Int((stats.adverseWeatherMinutes / stats.totalMinutes * 100).rounded()))% of your time" : nil,
+                                 symbol: "cloud.rain.fill", tint: .secondary)
                         StatTile(title: "Longest", value: stats.longestDrive.map { Fmt.duration(minutes: $0.totalMinutes) } ?? "—",
-                                 detail: stats.longestDrive.map { Fmt.mediumDate.string(from: $0.startDate) }, symbol: "trophy.fill", tint: .yellow)
+                                 detail: stats.longestDrive.map { Fmt.mediumDate.string(from: $0.startDate) }, symbol: "trophy.fill", tint: .secondary)
                     }
 
                     if let date = stats.projectedCompletion() {

@@ -75,22 +75,57 @@ struct StatTile: View {
     var tint: Color = .accentColor
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-                .labelStyle(.titleAndIcon)
+        VStack(alignment: .leading, spacing: 4) {
+            // Icon carries the color; titles stay neutral so a grid of tiles reads as one set.
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 18)
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Text(value)
                 .font(.title2.weight(.bold).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-            if let detail {
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
+                .padding(.top, 2)
+            // Always reserve the detail line so every tile in a row is the same height.
+            Text(detail ?? " ")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .accessibilityHidden(detail == nil)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Icon + text that keeps them together. Use instead of Label inside Forms/Lists, where iOS gives
+/// Label row-icon styling that spreads the two apart or squeezes the text out.
+struct IconText: View {
+    let text: String
+    let symbol: String
+    var spacing: CGFloat = 6
+
+    init(_ text: String, symbol: String, spacing: CGFloat = 6) {
+        self.text = text
+        self.symbol = symbol
+        self.spacing = spacing
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            Image(systemName: symbol).imageScale(.small)
+            Text(text).lineLimit(1)
+        }
+        .fixedSize()
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -103,10 +138,11 @@ struct ToggleChip: View {
 
     var body: some View {
         Button(action: action) {
-            Label(label, systemImage: symbol)
+            IconText(label, symbol: symbol)
                 .font(.subheadline.weight(.medium))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 36)
                 .foregroundStyle(isOn ? Color.white : Color.primary)
                 .background(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
         }

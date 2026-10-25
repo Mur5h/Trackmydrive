@@ -153,9 +153,9 @@ struct DriveEditorView: View {
                 Text(Fmt.duration(minutes: draft.totalMinutes))
                     .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
                 HStack(spacing: 16) {
-                    Label(Fmt.duration(minutes: currentNightMinutes), systemImage: "moon.fill").foregroundStyle(Theme.night)
+                    IconText(Fmt.duration(minutes: currentNightMinutes), symbol: "moon.fill").foregroundStyle(Theme.night)
                     if let m = draft.distanceMeters {
-                        Label(Fmt.distance(meters: m, unit: store.settings.distanceUnit), systemImage: "road.lanes")
+                        IconText(Fmt.distance(meters: m, unit: store.settings.distanceUnit), symbol: "road.lanes")
                             .foregroundStyle(.secondary)
                     }
                 }

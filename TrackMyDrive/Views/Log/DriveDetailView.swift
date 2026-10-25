@@ -67,8 +67,8 @@ struct DriveDetailView: View {
                     StatTile(title: "Distance", value: Fmt.distance(meters: drive.distanceMeters, unit: unit), symbol: "road.lanes")
                     StatTile(title: "Avg Speed", value: drive.averageSpeedMetersPerSecond.map { Fmt.speed(metersPerSecond: $0, unit: unit) } ?? "—",
                              symbol: "speedometer", tint: .teal)
-                    StatTile(title: "Supervisor", value: drive.supervisor.isEmpty ? "—" : drive.supervisor, symbol: "person.fill", tint: .green)
-                    StatTile(title: "Vehicle", value: drive.vehicle.isEmpty ? "—" : drive.vehicle, symbol: "car.fill", tint: .orange)
+                    StatTile(title: "Supervisor", value: drive.supervisor.isEmpty ? "—" : drive.supervisor, symbol: "person.fill", tint: .secondary)
+                    StatTile(title: "Vehicle", value: drive.vehicle.isEmpty ? "—" : drive.vehicle, symbol: "car.fill", tint: .secondary)
                 }
 
                 if let route = drive.routeSummary {
@@ -149,7 +149,7 @@ struct DriveDetailView: View {
     }
 
     private func tag(_ text: String, symbol: String) -> some View {
-        Label(text, systemImage: symbol)
+        IconText(text, symbol: symbol)
             .font(.subheadline)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
