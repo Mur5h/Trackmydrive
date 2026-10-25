@@ -49,52 +49,56 @@ struct ActiveDriveView: View {
                 VStack(spacing: 0) {
                     topBar(isNight: isNight)
 
-                    Spacer(minLength: 12)
+                    // Scrolls on small phones and large text sizes; Stop stays pinned below.
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            VStack(spacing: 6) {
+                                Text("DRIVE TIME")
+                                    .font(.caption.weight(.bold))
+                                    .tracking(2)
+                                    .opacity(0.8)
+                                Text(Fmt.clock(seconds: active.elapsed(at: context.date)))
+                                    .font(.system(size: 76, weight: .bold, design: .rounded).monospacedDigit())
+                                    .minimumScaleFactor(0.4)
+                                    .lineLimit(1)
+                                    .contentTransition(.numericText())
+                                Text("Started \(Fmt.time.string(from: active.startDate))")
+                                    .font(.subheadline)
+                                    .opacity(0.85)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .padding(.vertical, 28)
 
-                    VStack(spacing: 6) {
-                        Text("DRIVE TIME")
-                            .font(.caption.weight(.bold))
-                            .tracking(2)
-                            .opacity(0.7)
-                        Text(Fmt.clock(seconds: active.elapsed(at: context.date)))
-                            .font(.system(size: 76, weight: .bold, design: .rounded).monospacedDigit())
-                            .minimumScaleFactor(0.5)
-                            .lineLimit(1)
-                            .contentTransition(.numericText())
-                        Text("Started \(Fmt.time.string(from: active.startDate))")
-                            .font(.subheadline)
-                            .opacity(0.75)
+                            // No speedometer on purpose: nothing here should be worth a glance from the driver.
+                            HStack(spacing: 12) {
+                                liveStat(title: "Distance", value: trackingAvailable ? Fmt.distance(meters: active.distanceMeters, unit: store.settings.distanceUnit) : "—",
+                                         symbol: "point.topleft.down.to.point.bottomright.curvepath.fill")
+                                liveStat(title: "Night", value: Fmt.duration(minutes: nightSoFar), symbol: "moon.stars.fill")
+                            }
+                            .padding(.horizontal)
+
+                            supervisorCard(active)
+                                .padding(.horizontal)
+                                .padding(.top, 12)
+
+                            locationNotice
+                                .padding(.horizontal)
+                                .padding(.top, 10)
+                        }
+                        .padding(.bottom, 12)
                     }
-                    .accessibilityElement(children: .combine)
-
-                    Spacer(minLength: 12)
-
-                    HStack(spacing: 12) {
-                        liveStat(title: "Distance", value: trackingAvailable ? Fmt.distance(meters: active.distanceMeters, unit: store.settings.distanceUnit) : "—",
-                                 symbol: "point.topleft.down.to.point.bottomright.curvepath.fill")
-                        liveStat(title: "Speed", value: location.currentSpeed.map { Fmt.speed(metersPerSecond: $0, unit: store.settings.distanceUnit) } ?? "—",
-                                 symbol: "speedometer")
-                        liveStat(title: "Night", value: Fmt.duration(minutes: nightSoFar), symbol: "moon.stars.fill")
+                    .scrollBounceBehavior(.basedOnSize)
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 10) {
+                        stopButton
+                        Label("Driver: eyes on the road. Only the supervisor uses the phone.", systemImage: "hand.raised.fill")
+                            .font(.footnote.weight(.semibold))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
                     }
-                    .padding(.horizontal)
-
-                    supervisorCard(active)
-                        .padding(.horizontal)
-                        .padding(.top, 12)
-
-                    locationNotice
-                        .padding(.horizontal)
-                        .padding(.top, 10)
-
-                    Spacer(minLength: 16)
-
-                    stopButton
-
-                    Text("Supervisors: keep the phone away from the driver.")
-                        .font(.caption)
-                        .opacity(0.6)
-                        .padding(.top, 14)
-                        .padding(.bottom, 8)
+                    .padding(.top, 10)
+                    .padding(.bottom, 8)
                 }
             }
             .foregroundStyle(.white)
@@ -124,7 +128,7 @@ struct ActiveDriveView: View {
     }
 
     private var trackingAvailable: Bool {
-        store.settings.trackLocation && location.isAuthorized
+        store.settings.trackLocation && location.isAuthorized && location.isPrecise
     }
 
     private func topBar(isNight: Bool) -> some View {
@@ -197,6 +201,18 @@ struct ActiveDriveView: View {
     }
 
     @ViewBuilder private var locationNotice: some View {
+        if store.settings.trackLocation && location.isAuthorized && !location.isPrecise {
+            HStack(spacing: 10) {
+                Image(systemName: "location.circle")
+                Text("Precise Location is off, so distance can't be measured.")
+                    .font(.footnote)
+                Spacer()
+                Button("Turn On") { location.requestPreciseLocation() }
+                    .font(.footnote.weight(.semibold))
+            }
+            .padding(12)
+            .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
         if store.settings.trackLocation && location.isDenied {
             HStack(spacing: 10) {
                 Image(systemName: "location.slash.fill")

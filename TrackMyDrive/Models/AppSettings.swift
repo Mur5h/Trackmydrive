@@ -43,7 +43,7 @@ struct AppSettings: Codable, Equatable {
     var vehicles: [String] = []
     var distanceUnit: DistanceUnit = .miles
     var trackLocation: Bool = true
-    var keepScreenOnWhileDriving: Bool = true
+    var keepScreenOnWhileDriving: Bool = false
     var reminderEnabled: Bool = false
     var reminderMinutes: Int = 17 * 60
     var hasOnboarded: Bool = false

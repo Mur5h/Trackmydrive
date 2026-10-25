@@ -16,10 +16,10 @@ struct OnboardingView: View {
     var body: some View {
         VStack(spacing: 0) {
             TabView(selection: $page) {
-                welcome.tag(0)
-                profile.tag(1)
-                requirements.tag(2)
-                safety.tag(3)
+                scrollable(welcome, alignment: .center).tag(0)
+                scrollable(profile).tag(1)
+                scrollable(requirements).tag(2)
+                scrollable(safety).tag(3)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut, value: page)
@@ -88,6 +88,17 @@ struct OnboardingView: View {
     }
 
     // MARK: Pages
+
+    /// Lets a page scroll on small phones, large text, or with the keyboard up, while still filling the screen.
+    private func scrollable<V: View>(_ page: V, alignment: Alignment = .top) -> some View {
+        GeometryReader { geo in
+            ScrollView {
+                page.frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: alignment)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDismissesKeyboard(.interactively)
+        }
+    }
 
     private var welcome: some View {
         VStack(spacing: 24) {

@@ -22,6 +22,8 @@ struct Drive: Identifiable, Codable, Hashable {
     var startPlaceName: String?
     var endPlaceName: String?
     var route: [RoutePoint] = []
+    /// Where the drive happened, so night time is always worked out in the drive's own time zone.
+    var timeZoneIdentifier: String? = TimeZone.current.identifier
     var createdAt: Date = Date()
     var modifiedAt: Date = Date()
 
@@ -41,6 +43,13 @@ struct Drive: Identifiable, Codable, Hashable {
         return distanceMeters / duration
     }
 
+    /// A calendar in the drive's own time zone (falls back to the phone's).
+    var calendar: Calendar {
+        var c = Calendar.current
+        if let id = timeZoneIdentifier, let tz = TimeZone(identifier: id) { c.timeZone = tz }
+        return c
+    }
+
     var routeSummary: String? {
         switch (startPlaceName, endPlaceName) {
         case (let s?, let e?) where s != e: return "\(s) → \(e)"
@@ -55,7 +64,7 @@ struct Drive: Identifiable, Codable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, startDate, endDate, nightMinutes, nightMinutesIsManual, supervisor, vehicle,
              distanceMeters, weather, roads, skills, notes, source, startLatitude, startLongitude,
-             startPlaceName, endPlaceName, route, createdAt, modifiedAt
+             startPlaceName, endPlaceName, route, timeZoneIdentifier, createdAt, modifiedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -78,6 +87,8 @@ struct Drive: Identifiable, Codable, Hashable {
         startPlaceName = try c.decodeIfPresent(String.self, forKey: .startPlaceName)
         endPlaceName = try c.decodeIfPresent(String.self, forKey: .endPlaceName)
         route = (try? c.decodeIfPresent([RoutePoint].self, forKey: .route)) ?? []
+        // Older drives don't have one; nil means "use the phone's time zone".
+        timeZoneIdentifier = try c.decodeIfPresent(String.self, forKey: .timeZoneIdentifier)
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? startDate
         modifiedAt = try c.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? createdAt
     }
@@ -102,6 +113,7 @@ struct Drive: Identifiable, Codable, Hashable {
         try c.encodeIfPresent(startPlaceName, forKey: .startPlaceName)
         try c.encodeIfPresent(endPlaceName, forKey: .endPlaceName)
         if !route.isEmpty { try c.encode(route, forKey: .route) }
+        try c.encodeIfPresent(timeZoneIdentifier, forKey: .timeZoneIdentifier)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(modifiedAt, forKey: .modifiedAt)
     }

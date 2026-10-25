@@ -31,7 +31,7 @@ struct HomeView: View {
             }
             .sheet(item: $sharePayload) { payload in
                 ShareSheet(items: payload.items) { type, completed in
-                    guard completed else { return }
+                    guard completed, ShareSheet.leavesDevice(type) else { return }
                     store.markExternalBackup(toNotes: type == ShareSheet.notesActivity)
                 }
                 .presentationDetents([.medium, .large])

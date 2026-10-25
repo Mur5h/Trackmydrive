@@ -69,12 +69,15 @@ enum BackupCodec {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         e.outputFormatting = pretty ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+        // One bad number (e.g. an infinite distance) must never stop the whole log from saving.
+        e.nonConformingFloatEncodingStrategy = .convertToString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
         return e
     }
 
     static func makeDecoder() -> JSONDecoder {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
+        d.nonConformingFloatDecodingStrategy = .convertFromString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
         return d
     }
 

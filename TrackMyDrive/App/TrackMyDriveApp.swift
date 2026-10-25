@@ -13,7 +13,7 @@ struct TrackMyDriveApp: App {
                 .environmentObject(location)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { store.flush() }
+            if phase == .active { store.becameActive() } else { store.flush() }
         }
     }
 }

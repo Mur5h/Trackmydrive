@@ -12,8 +12,17 @@ struct GetDrivingLogBackupIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let store = DriveStore.shared
+        store.becameActive()
+        // Never hand back an empty log (which could replace a good note) when the real one can't be read.
+        guard store.isLogAvailable else { throw LogUnavailableError() }
         store.markExternalBackup(toNotes: false)
         return .result(value: ExportService.notesText(store: store))
+    }
+}
+
+struct LogUnavailableError: LocalizedError {
+    var errorDescription: String? {
+        "TrackMyDrive couldn't open your log right now (the phone may be locked). No backup was made — try again after unlocking."
     }
 }
 
@@ -23,6 +32,7 @@ struct DrivingHoursSummaryIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
+        DriveStore.shared.becameActive()
         let stats = DriveStore.shared.stats
         var text = "You've logged \(Fmt.duration(minutes: stats.totalMinutes)), including \(Fmt.duration(minutes: stats.nightMinutes)) at night."
         if stats.goalsComplete {
@@ -43,8 +53,11 @@ struct StartDriveIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let store = DriveStore.shared
-        if store.activeDrive != nil {
-            return .result(dialog: "A drive is already in progress.")
+        store.becameActive()
+        if let active = store.activeDrive {
+            return .result(dialog: active.stoppedAt == nil
+                ? "A drive is already in progress."
+                : "Your last drive is waiting to be saved. Open TrackMyDrive to save it first.")
         }
         store.startDrive(supervisor: store.settings.defaultSupervisor, vehicle: store.settings.defaultVehicle)
         return .result(dialog: "Drive started. Drive safely!")
@@ -59,6 +72,7 @@ struct StopDriveIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let store = DriveStore.shared
+        store.becameActive()
         guard let active = store.activeDrive, active.stoppedAt == nil else {
             return .result(dialog: "There's no drive in progress.")
         }

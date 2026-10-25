@@ -43,8 +43,8 @@ struct BackupView: View {
                     share(.json)
                 }
                 exportRow(copiedToClipboard ? "Copied!" : "Copy Backup Text", detail: "Paste into any app — Notes, Messages, email", symbol: "doc.on.doc.fill", tint: .orange) {
+                    // Not counted as a backup: nothing has left the phone until it's pasted somewhere.
                     UIPasteboard.general.string = ExportService.notesText(store: store)
-                    store.markExternalBackup(toNotes: false)
                     copiedToClipboard = true
                     Haptics.success()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copiedToClipboard = false }
@@ -90,7 +90,7 @@ struct BackupView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.items) { type, completed in
-                guard completed else { return }
+                guard completed, ShareSheet.leavesDevice(type) else { return }
                 store.markExternalBackup(toNotes: type == ShareSheet.notesActivity)
             }
             .presentationDetents([.medium, .large])

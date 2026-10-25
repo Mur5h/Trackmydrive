@@ -33,7 +33,6 @@ final class DriveStore: ObservableObject {
     private var lastActivePersist = Date.distantPast
     private let fm = FileManager.default
     private let tracker: LocationTracker
-    private let geocoder = CLGeocoder()
 
     private init() {
         tracker = LocationTracker.shared
@@ -50,25 +49,29 @@ final class DriveStore: ObservableObject {
 
     // MARK: - Drives
 
-    func add(_ drive: Drive) {
+    /// Returns false if the log couldn't be written to disk (the drive is still kept in memory).
+    @discardableResult
+    func add(_ drive: Drive) -> Bool {
         var d = drive
-        d.createdAt = Date()
+        d.createdAt = drives.first { $0.id == d.id }?.createdAt ?? Date()
         d.modifiedAt = Date()
         drives.removeAll { $0.id == d.id }
+        recentlyDeleted.removeAll { $0.id == d.id }
         drives.append(d)
         rememberNames(from: d)
         sortDrives()
-        saveNow()
+        return saveNow()
     }
 
-    func update(_ drive: Drive) {
-        guard let i = drives.firstIndex(where: { $0.id == drive.id }) else { add(drive); return }
+    @discardableResult
+    func update(_ drive: Drive) -> Bool {
+        guard let i = drives.firstIndex(where: { $0.id == drive.id }) else { return add(drive) }
         var d = drive
         d.modifiedAt = Date()
         drives[i] = d
         rememberNames(from: d)
         sortDrives()
-        saveNow()
+        return saveNow()
     }
 
     func delete(_ ids: Set<UUID>) {
@@ -108,12 +111,13 @@ final class DriveStore: ObservableObject {
     func computedNightMinutes(for drive: Drive) -> Double {
         NightCalculator.nightMinutes(start: drive.startDate, end: drive.endDate,
                                      latitude: drive.startLatitude, longitude: drive.startLongitude,
-                                     settings: settings)
+                                     settings: settings, calendar: drive.calendar)
     }
 
     /// Re-runs the night calculation for every drive whose night time wasn't typed in by hand.
     @discardableResult
     func recalculateNightTimes() -> Int {
+        writeSnapshot(suffix: "before-recalculate")
         var changed = 0
         for i in drives.indices where !drives[i].nightMinutesIsManual {
             let value = computedNightMinutes(for: drives[i])
@@ -142,9 +146,11 @@ final class DriveStore: ObservableObject {
 
     func startDrive(supervisor: String, vehicle: String) {
         guard activeDrive == nil else { return }
-        activeDrive = ActiveDrive(startDate: Date(), supervisor: supervisor, vehicle: vehicle)
+        let a = ActiveDrive(startDate: Date(), supervisor: supervisor, vehicle: vehicle)
+        activeDrive = a
         persistActive(force: true)
         if settings.trackLocation { tracker.start() }
+        NotificationService.scheduleStillDriving(startedAt: a.startDate)
     }
 
     func stopDrive() {
@@ -153,8 +159,9 @@ final class DriveStore: ObservableObject {
         activeDrive = a
         persistActive(force: true)
         tracker.stop()
+        NotificationService.cancelStillDriving()
         if let lat = a.lastLatitude, let lon = a.lastLongitude {
-            geocode(CLLocation(latitude: lat, longitude: lon), isStart: false)
+            geocode(CLLocation(latitude: lat, longitude: lon), isStart: false, driveID: a.id)
         }
     }
 
@@ -164,6 +171,7 @@ final class DriveStore: ObservableObject {
         activeDrive = a
         persistActive(force: true)
         if settings.trackLocation { tracker.start() }
+        NotificationService.scheduleStillDriving(startedAt: a.startDate)
     }
 
     func updateActive(supervisor: String, vehicle: String) {
@@ -188,18 +196,26 @@ final class DriveStore: ObservableObject {
         d.startPlaceName = a.startPlaceName
         d.endPlaceName = a.endPlaceName
         d.route = a.route
+        d.timeZoneIdentifier = a.timeZoneIdentifier
         d.nightMinutes = computedNightMinutes(for: d)
         return d
     }
 
-    func finishActiveDrive(with draft: Drive) {
+    /// Saves the reviewed drive. The live drive is only cleared once the log is safely on disk;
+    /// otherwise it stays (and stays saved in its own file) so the hours can't be lost.
+    @discardableResult
+    func finishActiveDrive(with draft: Drive) -> Bool {
         var d = draft
         if let a = activeDrive {
             if d.startPlaceName == nil { d.startPlaceName = a.startPlaceName }
             if d.endPlaceName == nil { d.endPlaceName = a.endPlaceName }
         }
-        add(d)
+        guard add(d) else {
+            drives.removeAll { $0.id == d.id }
+            return false
+        }
         clearActive()
+        return true
     }
 
     func discardActiveDrive() {
@@ -208,29 +224,41 @@ final class DriveStore: ObservableObject {
 
     private func clearActive() {
         tracker.stop()
+        NotificationService.cancelStillDriving()
         activeDrive = nil
+        guard !writesBlocked else { return }
         try? fm.removeItem(at: StorePaths.activeDrive)
     }
 
     private func record(location: CLLocation) {
         guard var a = activeDrive, a.stoppedAt == nil else { return }
-        guard location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 65,
-              location.timestamp >= a.startDate.addingTimeInterval(-5),
-              abs(location.timestamp.timeIntervalSinceNow) < 30 else { return }
+        guard location.horizontalAccuracy >= 0,
+              location.timestamp >= a.startDate.addingTimeInterval(-5) else { return }
+        // Fixes can arrive in delayed batches; take every one newer than the last, in order.
+        if let lastFix = a.lastFixDate {
+            guard location.timestamp > lastFix else { return }
+        } else if abs(location.timestamp.timeIntervalSinceNow) > 60 {
+            return
+        }
         let coord = location.coordinate
 
-        if a.startLatitude == nil {
+        // Even a rough fix (e.g. Precise Location off) is plenty for sunset times.
+        if a.startLatitude == nil, location.horizontalAccuracy <= 5000 {
             a.startLatitude = coord.latitude
             a.startLongitude = coord.longitude
             settings.lastKnownLatitude = coord.latitude
             settings.lastKnownLongitude = coord.longitude
-            geocode(location, isStart: true)
+            geocode(location, isStart: true, driveID: a.id)
+            activeDrive = a
         }
+        guard location.horizontalAccuracy <= 65 else { return }
 
         if let lat = a.lastLatitude, let lon = a.lastLongitude, let lastFix = a.lastFixDate {
             let d = location.distance(from: CLLocation(latitude: lat, longitude: lon))
             // Ignore GPS jitter while parked; keep the old anchor so slow creeping still adds up.
             if d < max(4, location.horizontalAccuracy * 0.5) { return }
+            // Stopped at a light: wander within the error circle isn't driving.
+            if location.speed >= 0, location.speed < 0.7, d < max(15, location.horizontalAccuracy) { return }
             let dt = max(location.timestamp.timeIntervalSince(lastFix), 0.5)
             // A jump faster than ~170 mph is a bad fix (or a long gap); re-anchor without counting it.
             if d / dt <= 75 { a.distanceMeters += d }
@@ -259,13 +287,13 @@ final class DriveStore: ObservableObject {
         persistActive(force: false)
     }
 
-    private func geocode(_ location: CLLocation, isStart: Bool) {
+    private func geocode(_ location: CLLocation, isStart: Bool, driveID: UUID) {
         Task { [weak self] in
-            guard let self else { return }
-            guard let placemark = try? await self.geocoder.reverseGeocodeLocation(location).first else { return }
+            // One geocoder per request so a quick stop doesn't cancel the start lookup.
+            guard let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first, let self else { return }
             let parts = [placemark.thoroughfare, placemark.locality].compactMap { $0 }
             let name = parts.isEmpty ? placemark.name : parts.joined(separator: ", ")
-            guard let name, var a = self.activeDrive else { return }
+            guard let name, var a = self.activeDrive, a.id == driveID else { return }
             if isStart { a.startPlaceName = name } else { a.endPlaceName = name }
             self.activeDrive = a
             self.persistActive(force: true)
@@ -273,7 +301,7 @@ final class DriveStore: ObservableObject {
     }
 
     private func persistActive(force: Bool) {
-        guard let a = activeDrive else { return }
+        guard let a = activeDrive, !writesBlocked else { return }
         guard force || Date().timeIntervalSince(lastActivePersist) > 10 else { return }
         lastActivePersist = Date()
         guard let data = try? BackupCodec.makeEncoder(pretty: false).encode(a) else { return }
@@ -358,6 +386,23 @@ final class DriveStore: ObservableObject {
         saveNow()
     }
 
+    /// False while the log file couldn't be read; nothing is saved until it can be.
+    var isLogAvailable: Bool { !writesBlocked }
+
+    /// Call when the app comes to the foreground (and before Shortcuts actions): retries a log that
+    /// couldn't be read at launch (e.g. the phone was still locked) and resumes GPS for a live drive.
+    func becameActive() {
+        if writesBlocked {
+            writesBlocked = false
+            loadWarning = nil
+            lastSaveError = nil
+            load()
+        }
+        if let a = activeDrive, a.stoppedAt == nil, settings.trackLocation {
+            tracker.start()
+        }
+    }
+
     /// Writes everything to disk right away (call when the app goes to the background).
     func flush() {
         if saveTask != nil { saveNow() }
@@ -380,13 +425,15 @@ final class DriveStore: ObservableObject {
         }
     }
 
-    private func saveNow() {
+    @discardableResult
+    private func saveNow() -> Bool {
         saveTask?.cancel()
         saveTask = nil
         guard !writesBlocked else {
-            lastSaveError = "Your log couldn't be opened, so changes aren't being saved to protect it. Restart the app."
-            return
+            lastSaveError = "Your log couldn't be opened, so changes aren't being saved to protect it. Close and reopen the app."
+            return false
         }
+        var ok = false
         do {
             let data = try BackupCodec.encode(archive)
             let primary = StorePaths.primaryLog
@@ -396,10 +443,12 @@ final class DriveStore: ObservableObject {
             }
             try data.write(to: primary, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             lastSaveError = nil
+            ok = true
         } catch {
             lastSaveError = "Couldn't save your log: \(error.localizedDescription)"
         }
         scheduleExports()
+        return ok
     }
 
     private func scheduleExports() {
@@ -424,7 +473,7 @@ final class DriveStore: ObservableObject {
         try? text.data(using: .utf8)?.write(to: StorePaths.documentsText, options: .atomic)
     }
 
-    private func writeSnapshot(suffix: String?) {
+    func writeSnapshot(suffix: String?) {
         guard !writesBlocked, !drives.isEmpty || !recentlyDeleted.isEmpty else { return }
         let dir = StorePaths.snapshotsDirectory
         let f = DateFormatter()
@@ -459,6 +508,7 @@ final class DriveStore: ObservableObject {
         let primary = StorePaths.primaryLog
         var loaded: LogArchive?
         var recoveredFrom: String?
+        var damaged: LogArchive?
 
         if fm.fileExists(atPath: primary.path) {
             do {
@@ -466,7 +516,9 @@ final class DriveStore: ObservableObject {
                 do {
                     loaded = try BackupCodec.decode(data)
                 } catch {
-                    // Damaged file: keep a copy for support, then fall back to backups below.
+                    // Damaged file: keep a copy, rescue whatever drives can still be read, then fall back
+                    // to the backups below and merge the rescued drives in.
+                    damaged = try? BackupCodec.decodeForRestore(data)
                     let stamp = Int(Date().timeIntervalSince1970)
                     try? fm.copyItem(at: primary, to: StorePaths.appSupport.appendingPathComponent("log.damaged-\(stamp).json"))
                 }
@@ -486,9 +538,30 @@ final class DriveStore: ObservableObject {
                     break
                 }
             }
+            var rescued = 0
+            if let damaged {
+                if loaded == nil {
+                    loaded = damaged
+                    recoveredFrom = "the readable part of your log"
+                } else if var base = loaded {
+                    for d in damaged.drives {
+                        if let i = base.drives.firstIndex(where: { $0.id == d.id }) {
+                            if d.modifiedAt > base.drives[i].modifiedAt { base.drives[i] = d }
+                        } else {
+                            base.drives.append(d)
+                            base.recentlyDeleted.removeAll { $0.id == d.id }
+                            rescued += 1
+                        }
+                    }
+                    loaded = base
+                }
+            }
             if fm.fileExists(atPath: primary.path) {
+                let lost = damaged?.skippedDrives ?? 0
+                let extra = (rescued > 0 ? " \(rescued) newer drive\(rescued == 1 ? " was" : "s were") rescued from the damaged file." : "")
+                    + (lost > 0 ? " \(lost) drive\(lost == 1 ? "" : "s") couldn't be read." : "")
                 loadWarning = recoveredFrom != nil
-                    ? "Your log file was damaged, so it was recovered from a backup (\(recoveredFrom!)). Check that your latest drives are there; if not, use Settings ▸ Restore with your Notes backup."
+                    ? "Your log file was damaged, so it was recovered from \(recoveredFrom ?? "a backup").\(extra) Check that your latest drives are there; if not, use Settings ▸ Restore with your Notes backup."
                     : "Your log file was damaged and no automatic backup could be read. Use Settings ▸ Restore with your Notes backup."
             }
         }

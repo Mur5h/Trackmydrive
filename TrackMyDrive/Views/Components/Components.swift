@@ -249,6 +249,14 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 
     static let notesActivity = UIActivity.ActivityType(rawValue: "com.apple.mobilenotes.SharingExtension")
+
+    /// Whether sharing to this destination puts a copy somewhere other than this phone's clipboard or screen.
+    static func leavesDevice(_ type: UIActivity.ActivityType?) -> Bool {
+        guard let type else { return false }
+        let local: [UIActivity.ActivityType] = [.copyToPasteboard, .print, .addToReadingList, .assignToContact,
+                                                .saveToCameraRoll, .markupAsPDF]
+        return !local.contains(type)
+    }
 }
 
 /// Identifiable payload for `.sheet(item:)`.

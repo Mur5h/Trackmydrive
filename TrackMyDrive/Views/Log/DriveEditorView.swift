@@ -21,6 +21,7 @@ struct DriveEditorView: View {
     @State private var confirmDelete = false
     @State private var showLongDriveWarning = false
     @State private var didAppear = false
+    @State private var saveFailed = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case distance, notes }
@@ -59,6 +60,7 @@ struct DriveEditorView: View {
         if draft.duration > 24 * 3600 { return "A single drive can't be longer than 24 hours. Split it into separate drives." }
         if !isReview, draft.endDate > Date().addingTimeInterval(5 * 60) { return "The drive can't end in the future." }
         if let distance = parsedDistance, distance < 0 { return "Distance can't be negative." }
+        if let distance = parsedDistance, !distance.isFinite || distance > 5000 { return "That distance is too large. Check the number." }
         if !distanceText.trimmingCharacters(in: .whitespaces).isEmpty, parsedDistance == nil { return "Enter the distance as a number." }
         return nil
     }
@@ -82,6 +84,7 @@ struct DriveEditorView: View {
         NavigationStack {
             Form {
                 if isReview { reviewHeader }
+                if isReview { forgottenStopSection }
                 timeSection
                 nightSection
                 peopleSection
@@ -108,6 +111,11 @@ struct DriveEditorView: View {
                     draft.supervisor = store.settings.defaultSupervisor
                     draft.vehicle = store.settings.defaultVehicle
                 }
+            }
+            .alert("Drive Not Saved Yet", isPresented: $saveFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("\(store.lastSaveError ?? "Your log couldn't be written.") Your drive is still kept safely on this phone. Close and reopen TrackMyDrive, then tap Save again.")
             }
             .confirmationDialog("Discard this drive?", isPresented: $confirmDiscard, titleVisibility: .visible) {
                 Button("Discard Drive", role: .destructive) {
@@ -161,6 +169,24 @@ struct DriveEditorView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
+        }
+    }
+
+    /// If the phone stopped moving long before Stop was tapped, offer to end the drive at that point.
+    @ViewBuilder private var forgottenStopSection: some View {
+        if let active = store.activeDrive, let lastFix = active.lastFixDate,
+           (active.stoppedAt ?? Date()).timeIntervalSince(lastFix) > 20 * 60,
+           lastFix > draft.startDate, abs(draft.endDate.timeIntervalSince(lastFix)) > 60 {
+            Section {
+                Button {
+                    draft.endDate = lastFix
+                } label: {
+                    Label("End at \(Fmt.time.string(from: lastFix)) instead", systemImage: "clock.arrow.circlepath")
+                        .font(.headline)
+                }
+            } footer: {
+                Text("The car stopped moving at \(Fmt.time.string(from: lastFix)), \(Fmt.duration(minutes: (active.stoppedAt ?? Date()).timeIntervalSince(lastFix) / 60)) before the drive was stopped. Forgot to tap Stop?")
+            }
         }
     }
 
@@ -370,7 +396,7 @@ struct DriveEditorView: View {
             store.update(d)
             dismiss()
         case .review:
-            store.finishActiveDrive(with: d)
+            if !store.finishActiveDrive(with: d) { saveFailed = true }
         }
     }
 

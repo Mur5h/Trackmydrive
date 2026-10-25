@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject private var store: DriveStore
     @EnvironmentObject private var location: LocationTracker
     @State private var recalcMessage: String?
+    @State private var confirmRecalc = false
     @State private var confirmDeleteAll = false
     @State private var notificationsDenied = false
 
@@ -111,10 +112,15 @@ struct SettingsView: View {
                 DatePicker(store.settings.nightMode == .fixedHours ? "Until" : "Fallback until",
                            selection: minutesBinding(\.fixedNightEndMinutes), displayedComponents: .hourAndMinute)
             }
-            Button("Recalculate Night Time for All Drives") {
-                let n = store.recalculateNightTimes()
-                recalcMessage = n == 0 ? "All drives were already up to date." : "Updated \(n) drive\(n == 1 ? "" : "s"). Drives with night time entered by hand weren't changed."
-            }
+            Button("Recalculate Night Time for All Drives") { confirmRecalc = true }
+                .confirmationDialog("Recalculate night time for every drive?", isPresented: $confirmRecalc, titleVisibility: .visible) {
+                    Button("Recalculate") {
+                        let n = store.recalculateNightTimes()
+                        recalcMessage = n == 0 ? "All drives were already up to date." : "Updated \(n) drive\(n == 1 ? "" : "s"). Drives with night time entered by hand weren't changed. A copy of your log from before this change was saved in Files ▸ TrackMyDrive ▸ Backups."
+                    }
+                } message: {
+                    Text("Night time on every drive will be worked out again using your current night settings. Drives where you typed the night time yourself won't change. A backup copy is saved first.")
+                }
         } header: {
             Text("Night Driving")
         } footer: {

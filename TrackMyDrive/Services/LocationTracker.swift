@@ -10,6 +10,8 @@ final class LocationTracker: NSObject, ObservableObject {
     @Published private(set) var authorization: CLAuthorizationStatus = .notDetermined
     @Published private(set) var lastLocation: CLLocation?
     @Published private(set) var isTracking = false
+    /// False when the user turned off Precise Location; fixes are then too rough to measure distance.
+    @Published private(set) var isPrecise = true
 
     var onLocation: (@MainActor (CLLocation) -> Void)?
 
@@ -23,6 +25,18 @@ final class LocationTracker: NSObject, ObservableObject {
         manager.activityType = .automotiveNavigation
         manager.pausesLocationUpdatesAutomatically = false
         authorization = manager.authorizationStatus
+        isPrecise = manager.accuracyAuthorization == .fullAccuracy
+    }
+
+    /// Asks for precise location for this drive only (iOS shows a one-time prompt).
+    func requestPreciseLocation() {
+        manager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: "DriveDistance") { [weak self] _ in
+            Task { @MainActor in self?.refreshAccuracy() }
+        }
+    }
+
+    private func refreshAccuracy() {
+        isPrecise = manager.accuracyAuthorization == .fullAccuracy
     }
 
     var isAuthorized: Bool {
@@ -69,6 +83,7 @@ final class LocationTracker: NSObject, ObservableObject {
 
     fileprivate func handleAuthorizationChange(_ status: CLAuthorizationStatus) {
         authorization = status
+        refreshAccuracy()
         beginUpdatesIfAllowed()
     }
 

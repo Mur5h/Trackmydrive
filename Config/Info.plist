@@ -6,6 +6,11 @@
 	<string>TrackMyDrive uses your location during a drive to measure distance, draw your route, and work out how much of the drive happened after sunset.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>TrackMyDrive keeps measuring your drive while the screen is locked so your distance and route stay accurate.</string>
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>DriveDistance</key>
+		<string>Precise location is needed to measure how far you drive. Without it, only the time of the drive is recorded.</string>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
