@@ -7,6 +7,12 @@ struct LogArchive: Codable {
     var settings: AppSettings
     var drives: [Drive]
     var recentlyDeleted: [DeletedDrive] = []
+    /// Drive entries that couldn't be read while decoding. Not saved.
+    var skippedDrives = 0
+
+    enum CodingKeys: String, CodingKey {
+        case formatVersion, exportedAt, settings, drives, recentlyDeleted
+    }
 
     init(settings: AppSettings, drives: [Drive], recentlyDeleted: [DeletedDrive] = []) {
         self.settings = settings
@@ -19,9 +25,26 @@ struct LogArchive: Codable {
         formatVersion = try c.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
         exportedAt = try c.decodeIfPresent(Date.self, forKey: .exportedAt) ?? Date()
         settings = (try? c.decodeIfPresent(AppSettings.self, forKey: .settings)) ?? AppSettings()
-        drives = try c.decodeIfPresent([Drive].self, forKey: .drives) ?? []
+        // Decode drives one by one so a single damaged entry doesn't hide all the others.
+        drives = []
+        if c.contains(.drives), try !c.decodeNil(forKey: .drives) {
+            var list = try c.nestedUnkeyedContainer(forKey: .drives)
+            while !list.isAtEnd {
+                if let d = try? list.decode(Drive.self) {
+                    drives.append(d)
+                } else {
+                    guard (try? list.decode(SkippedValue.self)) != nil else { break }
+                    skippedDrives += 1
+                }
+            }
+        }
         recentlyDeleted = (try? c.decodeIfPresent([DeletedDrive].self, forKey: .recentlyDeleted)) ?? []
     }
+}
+
+/// Consumes one array element of any shape.
+private struct SkippedValue: Decodable {
+    init(from decoder: Decoder) throws {}
 }
 
 enum BackupCodecError: LocalizedError {
@@ -59,7 +82,18 @@ enum BackupCodec {
         try makeEncoder(pretty: pretty).encode(archive)
     }
 
+    /// Strict: any damaged drive fails the whole file. Used for the app's own log so a bad file
+    /// falls back to the previous copy instead of being saved over with drives missing.
     static func decode(_ data: Data) throws -> LogArchive {
+        let archive = try decodeForRestore(data)
+        guard archive.skippedDrives == 0 else {
+            throw BackupCodecError.unreadable("\(archive.skippedDrives) damaged drive(s)")
+        }
+        return archive
+    }
+
+    /// Lenient: damaged drives are skipped and counted in `skippedDrives`.
+    static func decodeForRestore(_ data: Data) throws -> LogArchive {
         do {
             return try makeDecoder().decode(LogArchive.self, from: data)
         } catch {
@@ -77,26 +111,48 @@ enum BackupCodec {
         return "\(beginMarker)\n\(b64)\n\(endMarker)"
     }
 
-    /// Accepts a pasted note (with the BEGIN/END block), raw base64, or raw JSON.
+    /// Accepts a pasted note (with the BEGIN/END block), raw base64, or raw JSON. If the BEGIN/END
+    /// lines were lost or changed, the longest block of base64 lines in the text is tried instead.
     static func decode(text: String) throws -> LogArchive {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.first == "{", let data = trimmed.data(using: .utf8) {
-            return try decode(data)
+            return try decodeForRestore(data)
         }
-        var payload = trimmed
+        let payload: String
         if let begin = trimmed.range(of: beginMarker) {
-            guard let end = trimmed.range(of: endMarker, range: begin.upperBound..<trimmed.endIndex) else {
-                throw BackupCodecError.unreadable("the END line is missing")
-            }
-            payload = String(trimmed[begin.upperBound..<end.lowerBound])
+            let end = trimmed.range(of: endMarker, range: begin.upperBound..<trimmed.endIndex)
+            payload = String(trimmed[begin.upperBound..<(end?.lowerBound ?? trimmed.endIndex)])
         } else if trimmed.contains(" ") {
-            throw BackupCodecError.noBackupFound
+            guard let run = longestBase64Run(in: trimmed) else { throw BackupCodecError.noBackupFound }
+            payload = run
+        } else {
+            payload = trimmed
         }
-        let cleaned = payload.filter { $0.isLetter || $0.isNumber || $0 == "+" || $0 == "/" || $0 == "=" }
-            .filter { $0.isASCII }
+        let cleaned = payload.filter(isBase64Character)
         guard !cleaned.isEmpty, let data = Data(base64Encoded: cleaned) else {
             throw BackupCodecError.noBackupFound
         }
-        return try decode(data)
+        return try decodeForRestore(data)
+    }
+
+    private static func isBase64Character(_ c: Character) -> Bool {
+        c.isASCII && (c.isLetter || c.isNumber || c == "+" || c == "/" || c == "=")
+    }
+
+    /// The longest run of consecutive lines made only of base64 characters (at least 100 of them).
+    private static func longestBase64Run(in text: String) -> String? {
+        var best = ""
+        var current = ""
+        for line in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+            let l = line.trimmingCharacters(in: .whitespaces)
+            if !l.isEmpty, l.allSatisfy(isBase64Character) {
+                current += l
+            } else {
+                if current.count > best.count { best = current }
+                current = ""
+            }
+        }
+        if current.count > best.count { best = current }
+        return best.count >= 100 ? best : nil
     }
 }

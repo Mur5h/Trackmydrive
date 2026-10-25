@@ -56,6 +56,12 @@ enum PDFLogRenderer {
             index = end
         } while index < ordered.count
 
+        // The totals row goes under the last page's rows, so a full last page pushes its final row over.
+        let lastCapacity = pages.count == 1 ? rowsFirst : rowsOther
+        if pages[pages.count - 1].count >= lastCapacity, let moved = pages[pages.count - 1].popLast() {
+            pages.append([moved])
+        }
+
         // Make sure the signature block fits under the last page's rows.
         let lastTop = pages.count == 1 ? firstPageTableTop : otherPageTableTop
         let lastRowsBottom = lastTop + headerRowHeight + CGFloat(pages[pages.count - 1].count) * rowHeight + rowHeight

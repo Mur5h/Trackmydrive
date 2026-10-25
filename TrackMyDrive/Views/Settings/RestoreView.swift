@@ -97,6 +97,12 @@ struct RestoreView: View {
             LabeledContent("Total time", value: Fmt.duration(minutes: stats.totalMinutes))
             LabeledContent("Night time", value: Fmt.duration(minutes: stats.nightMinutes))
             LabeledContent("New to this phone", value: "\(newCount)")
+            if archive.skippedDrives > 0 {
+                Label("\(archive.skippedDrives) drive\(archive.skippedDrives == 1 ? " in this backup was" : "s in this backup were") damaged and will be skipped.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
             Toggle("Also restore settings & goals", isOn: $restoreSettings)
             Button {
                 let summary = store.importArchive(archive, restoreSettings: restoreSettings)
@@ -135,7 +141,7 @@ struct RestoreView: View {
             if let text = String(data: data, encoding: .utf8) {
                 pending = try BackupCodec.decode(text: text)
             } else {
-                pending = try BackupCodec.decode(data)
+                pending = try BackupCodec.decodeForRestore(data)
             }
         } catch {
             pending = nil

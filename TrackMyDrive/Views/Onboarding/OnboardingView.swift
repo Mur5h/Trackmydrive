@@ -119,6 +119,7 @@ struct OnboardingView: View {
                 .font(.subheadline.weight(.semibold))
         }
         .padding(.horizontal, 28)
+        .padding(.bottom, 20)
     }
 
     private func feature(_ symbol: String, _ text: String) -> some View {
