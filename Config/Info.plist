@@ -11,6 +11,8 @@
 		<key>DriveDistance</key>
 		<string>Precise location is needed to measure how far you drive. Without it, only the time of the drive is recorded.</string>
 	</dict>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

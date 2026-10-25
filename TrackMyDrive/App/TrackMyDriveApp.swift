@@ -11,6 +11,8 @@ struct TrackMyDriveApp: App {
             RootView()
                 .environmentObject(store)
                 .environmentObject(location)
+                // scenePhase doesn't change on a cold launch, so run the foreground work once here too.
+                .onAppear { store.becameActive() }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.becameActive() } else { store.flush() }

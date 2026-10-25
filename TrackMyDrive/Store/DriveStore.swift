@@ -159,6 +159,7 @@ final class DriveStore: ObservableObject {
         persistActive(force: true)
         if settings.trackLocation { tracker.start() }
         NotificationService.scheduleStillDriving(startedAt: a.startDate)
+        syncLiveActivity()
     }
 
     func stopDrive() {
@@ -168,6 +169,7 @@ final class DriveStore: ObservableObject {
         persistActive(force: true)
         tracker.stop()
         NotificationService.cancelStillDriving()
+        syncLiveActivity()
         if let lat = a.lastLatitude, let lon = a.lastLongitude {
             geocode(CLLocation(latitude: lat, longitude: lon), isStart: false, driveID: a.id)
         }
@@ -180,6 +182,7 @@ final class DriveStore: ObservableObject {
         persistActive(force: true)
         if settings.trackLocation { tracker.start() }
         NotificationService.scheduleStillDriving(startedAt: a.startDate)
+        syncLiveActivity()
     }
 
     func updateActive(supervisor: String, vehicle: String) {
@@ -188,6 +191,11 @@ final class DriveStore: ObservableObject {
         a.vehicle = vehicle
         activeDrive = a
         persistActive(force: true)
+        syncLiveActivity()
+    }
+
+    private func syncLiveActivity() {
+        LiveActivityService.sync(with: activeDrive, driverName: settings.studentName)
     }
 
     /// A drive pre-filled from the live drive, for the review screen.
@@ -235,6 +243,7 @@ final class DriveStore: ObservableObject {
         tracker.stop()
         NotificationService.cancelStillDriving()
         activeDrive = nil
+        syncLiveActivity()
         guard !writesBlocked else { return }
         try? fm.removeItem(at: StorePaths.activeDrive)
     }
@@ -521,6 +530,7 @@ final class DriveStore: ObservableObject {
         if let a = activeDrive, a.stoppedAt == nil, settings.trackLocation {
             tracker.start()
         }
+        syncLiveActivity()
     }
 
     /// Writes everything to disk right away (call when the app goes to the background).
