@@ -56,7 +56,7 @@ struct RestoreView: View {
             } header: {
                 Text("From a File")
             } footer: {
-                Text("Pick a .json backup from Files or iCloud Drive — including the automatic daily backups in On My iPhone ▸ TrackMyDrive ▸ Backups.")
+                Text("Pick a .json backup from Files — \"\(CloudFolderBackup.backupFileName)\" in your iCloud Drive backup folder, or the daily copies in On My iPhone ▸ TrackMyDrive ▸ Backups.")
             }
 
             if let archive = pending {

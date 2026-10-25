@@ -206,7 +206,7 @@ struct SettingsView: View {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Backup & Export")
-                        Text(store.settings.lastExternalBackup.map { "Last backup \(Fmt.relative($0))" } ?? "Not backed up yet")
+                        Text(store.lastOffDeviceBackup.map { "Last backup \(Fmt.relative($0))" } ?? "Not backed up yet")
                             .font(.caption)
                             .foregroundStyle(store.changesSinceExternalBackup > 0 ? Color.orange : Color.secondary)
                     }

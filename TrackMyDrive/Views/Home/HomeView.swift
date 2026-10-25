@@ -226,7 +226,7 @@ struct HomeView: View {
 
     @ViewBuilder private var backupCard: some View {
         let changes = store.changesSinceExternalBackup
-        let last = store.settings.lastExternalBackup
+        let last = store.lastOffDeviceBackup
         let stale = changes > 0 && (last == nil || changes >= 3 || Date().timeIntervalSince(last!) > 7 * 86_400)
         if stale {
             Banner(

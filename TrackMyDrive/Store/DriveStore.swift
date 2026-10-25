@@ -21,6 +21,10 @@ final class DriveStore: ObservableObject {
     /// Shown once on the home screen when the log had to be recovered from a backup.
     @Published var loadWarning: String?
     @Published private(set) var lastSaveError: String?
+    /// The iCloud Drive (or other) folder that gets a fresh copy of the log after every change.
+    @Published private(set) var cloudFolder: CloudFolderState? = CloudFolderBackup.loadState()
+    @Published private(set) var isWritingCloudFolder = false
+    private var cloudWritePending = false
 
     static let trashRetentionDays = 30
 
@@ -375,8 +379,17 @@ final class DriveStore: ObservableObject {
     }
 
     /// Drives added or edited since the last backup that left the device.
+    /// The newest copy known to have left the phone: a shared/Notes backup or the iCloud Drive folder.
+    var lastOffDeviceBackup: Date? {
+        let cloud = cloudFolder?.isInICloud == true ? cloudFolder?.lastBackup : nil
+        switch (settings.lastExternalBackup, cloud) {
+        case let (a?, b?): return max(a, b)
+        case let (a, b): return a ?? b
+        }
+    }
+
     var changesSinceExternalBackup: Int {
-        guard let last = settings.lastExternalBackup else { return drives.count }
+        guard let last = lastOffDeviceBackup else { return drives.count }
         return drives.filter { $0.modifiedAt > last }.count
     }
 
@@ -384,6 +397,55 @@ final class DriveStore: ObservableObject {
         settings.lastExternalBackup = Date()
         if toNotes { settings.lastNotesBackup = Date() }
         saveNow()
+    }
+
+    // MARK: - iCloud Drive folder
+
+    func setCloudFolder(_ url: URL) throws {
+        cloudFolder = try CloudFolderBackup.makeState(for: url)
+        CloudFolderBackup.saveState(cloudFolder)
+        backUpToCloudFolder()
+    }
+
+    func removeCloudFolder() {
+        cloudFolder = nil
+        CloudFolderBackup.saveState(nil)
+    }
+
+    /// Copies the log, PDF and text into the chosen folder. Safe to call often; overlapping calls coalesce.
+    func backUpToCloudFolder(pdf: Data? = nil, text: Data? = nil) {
+        guard let folder = cloudFolder, !writesBlocked else { return }
+        if isWritingCloudFolder { cloudWritePending = true; return }
+        guard let json = try? BackupCodec.encode(archive, pretty: true) else { return }
+        let payload = CloudFolderBackup.Payload(
+            archiveJSON: json,
+            pdf: pdf ?? PDFLogRenderer.render(drives: drives, settings: settings, stats: stats),
+            text: text ?? TextLogFormatter.notesBackup(drives: drives, settings: settings, archive: archive).data(using: .utf8)
+        )
+        isWritingCloudFolder = true
+        Task { [weak self] in
+            var result = folder
+            do {
+                if let refreshed = try await CloudFolderBackup.write(payload, bookmark: folder.bookmark) {
+                    result.bookmark = refreshed
+                }
+                result.lastBackup = Date()
+                result.lastError = nil
+            } catch {
+                result.lastError = "Couldn't save to \(folder.folderName): \(error.localizedDescription). Choose the folder again in Backup & Export."
+            }
+            guard let self else { return }
+            // Ignore the result if the folder was changed or removed while writing.
+            if self.cloudFolder?.bookmark == folder.bookmark {
+                self.cloudFolder = result
+                CloudFolderBackup.saveState(result)
+            }
+            self.isWritingCloudFolder = false
+            if self.cloudWritePending {
+                self.cloudWritePending = false
+                self.backUpToCloudFolder()
+            }
+        }
     }
 
     /// False while the log file couldn't be read; nothing is saved until it can be.
@@ -465,12 +527,11 @@ final class DriveStore: ObservableObject {
     private func writeExports() {
         guard !writesBlocked else { return }
         writeSnapshot(suffix: nil)
-        let stats = self.stats
-        if let pdf = PDFLogRenderer.render(drives: drives, settings: settings, stats: stats) {
-            try? pdf.write(to: StorePaths.documentsPDF, options: .atomic)
-        }
-        let text = TextLogFormatter.notesBackup(drives: drives, settings: settings, archive: archive)
-        try? text.data(using: .utf8)?.write(to: StorePaths.documentsText, options: .atomic)
+        let pdf = PDFLogRenderer.render(drives: drives, settings: settings, stats: stats)
+        if let pdf { try? pdf.write(to: StorePaths.documentsPDF, options: .atomic) }
+        let text = TextLogFormatter.notesBackup(drives: drives, settings: settings, archive: archive).data(using: .utf8)
+        try? text?.write(to: StorePaths.documentsText, options: .atomic)
+        backUpToCloudFolder(pdf: pdf, text: text)
     }
 
     func writeSnapshot(suffix: String?) {

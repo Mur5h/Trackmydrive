@@ -5,6 +5,8 @@ struct BackupView: View {
     @State private var sharePayload: SharePayload?
     @State private var errorMessage: String?
     @State private var copiedToClipboard = false
+    @State private var choosingFolder = false
+    @State private var confirmStopFolder = false
 
     var body: some View {
         List {
@@ -31,6 +33,8 @@ struct BackupView: View {
             } footer: {
                 Text("Choose **Notes** in the share sheet, then tap **Save**. The note holds a readable copy of every drive, your PDF log, and restore data — and it syncs to iCloud, so it survives a lost or broken phone.")
             }
+
+            cloudFolderSection
 
             Section {
                 exportRow("PDF Driving Log", detail: "Printable log with totals and signature lines", symbol: "doc.richtext.fill", tint: .red) {
@@ -95,6 +99,19 @@ struct BackupView: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
+            switch result {
+            case .success(let url):
+                do { try store.setCloudFolder(url) } catch { errorMessage = error.localizedDescription }
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+            }
+        }
+        .confirmationDialog("Stop saving to this folder?", isPresented: $confirmStopFolder, titleVisibility: .visible) {
+            Button("Stop Automatic Backups", role: .destructive) { store.removeCloudFolder() }
+        } message: {
+            Text("Files already in the folder are kept. New drives won't be copied there.")
+        }
         .alert("Export Failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -102,8 +119,64 @@ struct BackupView: View {
         }
     }
 
+    @ViewBuilder private var cloudFolderSection: some View {
+        Section {
+            if let folder = store.cloudFolder {
+                HStack(spacing: 12) {
+                    Image(systemName: folder.lastError != nil ? "exclamationmark.icloud.fill" : "icloud.fill")
+                        .font(.title2)
+                        .foregroundStyle(folder.lastError != nil ? Color.orange : Color.accentColor)
+                        .frame(width: 30)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(folder.folderName).font(.subheadline.weight(.semibold))
+                        Group {
+                            if store.isWritingCloudFolder {
+                                Text("Saving…")
+                            } else if let error = folder.lastError {
+                                Text(error).foregroundStyle(.orange)
+                            } else if let last = folder.lastBackup {
+                                Text("Updated \(Fmt.relative(last)) · refreshes after every change")
+                            } else {
+                                Text("Waiting for the first backup")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+                Button("Back Up Now") { store.backUpToCloudFolder() }
+                    .disabled(store.isWritingCloudFolder)
+                Button("Change Folder…") { choosingFolder = true }
+                Button("Stop Automatic Backups", role: .destructive) { confirmStopFolder = true }
+            } else {
+                Button { choosingFolder = true } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "icloud.and.arrow.up.fill")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                            .frame(width: 30)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Choose iCloud Drive Folder…").foregroundStyle(.primary)
+                            Text("Your log is copied there automatically after every change")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Automatic iCloud Backup")
+        } footer: {
+            if let folder = store.cloudFolder, !folder.isInICloud {
+                Text("This folder isn't in iCloud Drive, so the copy stays on this phone. Choose a folder under iCloud Drive to protect against a lost phone.")
+            } else {
+                Text("Pick (or create) a folder in **iCloud Drive**, e.g. \"TrackMyDrive\". It gets your backup file, the PDF log and a text copy, plus a dated copy each day. To restore on a new phone: Restore From Backup ▸ Choose Backup File ▸ \(CloudFolderBackup.backupFileName).")
+            }
+        }
+    }
+
     private var isStale: Bool {
-        guard let last = store.settings.lastExternalBackup else { return !store.drives.isEmpty }
+        guard let last = store.lastOffDeviceBackup else { return !store.drives.isEmpty }
         return store.changesSinceExternalBackup > 0 && Date().timeIntervalSince(last) > 86_400
     }
 
@@ -112,14 +185,14 @@ struct BackupView: View {
 
     private var statusTitle: String {
         if store.drives.isEmpty { return "Nothing to back up yet" }
-        if store.settings.lastExternalBackup == nil { return "Not backed up yet" }
+        if store.lastOffDeviceBackup == nil { return "Not backed up yet" }
         let n = store.changesSinceExternalBackup
         return n == 0 ? "Everything is backed up" : "\(n) drive\(n == 1 ? "" : "s") since last backup"
     }
 
     private var statusDetail: String {
         var parts: [String] = []
-        if let last = store.settings.lastExternalBackup { parts.append("Last backup \(Fmt.relative(last))") }
+        if let last = store.lastOffDeviceBackup { parts.append("Last backup \(Fmt.relative(last))") }
         if let notes = store.settings.lastNotesBackup { parts.append("Notes \(Fmt.relative(notes))") }
         return parts.isEmpty ? "Back up after each drive to be safe." : parts.joined(separator: " · ")
     }
