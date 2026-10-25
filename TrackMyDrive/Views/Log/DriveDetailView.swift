@@ -47,11 +47,13 @@ struct DriveDetailView: View {
                             .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
                         DayNightBar(dayMinutes: drive.dayMinutes, nightMinutes: drive.clampedNightMinutes)
                         HStack {
-                            Label("Day \(Fmt.duration(minutes: drive.dayMinutes))", systemImage: "sun.max.fill")
-                                .foregroundStyle(Theme.day)
+                            Label { Text("Day \(Fmt.duration(minutes: drive.dayMinutes))") } icon: {
+                                Image(systemName: "sun.max.fill").foregroundStyle(Theme.day)
+                            }
                             Spacer()
-                            Label("Night \(Fmt.duration(minutes: drive.clampedNightMinutes))", systemImage: "moon.fill")
-                                .foregroundStyle(Theme.night)
+                            Label { Text("Night \(Fmt.duration(minutes: drive.clampedNightMinutes))") } icon: {
+                                Image(systemName: "moon.fill").foregroundStyle(Theme.night)
+                            }
                         }
                         .font(.footnote.weight(.semibold))
                     }

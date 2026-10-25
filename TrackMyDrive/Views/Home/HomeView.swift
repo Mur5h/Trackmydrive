@@ -47,7 +47,7 @@ struct HomeView: View {
     private var greeting: String {
         let first = store.settings.studentName.split(separator: " ").first.map(String.init) ?? ""
         let hour = Calendar.current.component(.hour, from: Date())
-        let part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
+        let part = (5..<12).contains(hour) ? "Good morning" : (12..<17).contains(hour) ? "Good afternoon" : "Good evening"
         return first.isEmpty ? part : "\(part), \(first)"
     }
 

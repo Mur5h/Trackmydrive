@@ -153,6 +153,7 @@ struct RestoreView: View {
 struct RecentlyDeletedView: View {
     @EnvironmentObject private var store: DriveStore
     @State private var confirmEmpty = false
+    @State private var pendingDelete: DeletedDrive?
 
     var body: some View {
         Group {
@@ -176,13 +177,13 @@ struct RecentlyDeletedView: View {
                                 .tint(.green)
                             }
                             .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) { store.permanentlyDelete(item) } label: {
+                                Button(role: .destructive) { pendingDelete = item } label: {
                                     Label("Delete Forever", systemImage: "trash.slash")
                                 }
                             }
                             .contextMenu {
                                 Button("Restore", systemImage: "arrow.uturn.backward") { store.restoreDeleted(item) }
-                                Button("Delete Forever", systemImage: "trash.slash", role: .destructive) { store.permanentlyDelete(item) }
+                                Button("Delete Forever", systemImage: "trash.slash", role: .destructive) { pendingDelete = item }
                             }
                         }
                     } footer: {
@@ -204,6 +205,12 @@ struct RecentlyDeletedView: View {
         }
         .navigationTitle("Recently Deleted")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Delete this drive forever?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+                            titleVisibility: .visible, presenting: pendingDelete) { item in
+            Button("Delete Forever", role: .destructive) { store.permanentlyDelete(item) }
+        } message: { item in
+            Text("\(Fmt.duration(minutes: item.drive.totalMinutes)) from \(Fmt.mediumDate.string(from: item.drive.startDate)) will be removed and can't be restored.")
+        }
         .confirmationDialog("Permanently delete these drives?", isPresented: $confirmEmpty, titleVisibility: .visible) {
             Button("Delete Forever", role: .destructive) { store.emptyRecentlyDeleted() }
         } message: {

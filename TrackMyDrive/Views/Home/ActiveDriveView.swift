@@ -6,7 +6,6 @@ struct ActiveDriveView: View {
     @EnvironmentObject private var location: LocationTracker
     var minimize: () -> Void
 
-    @State private var confirmStop = false
     @State private var confirmDiscard = false
     @State private var editingSupervisor = false
 
@@ -102,15 +101,6 @@ struct ActiveDriveView: View {
                 }
             }
             .foregroundStyle(.white)
-        }
-        .confirmationDialog("End this drive?", isPresented: $confirmStop, titleVisibility: .visible) {
-            Button("End Drive") {
-                Haptics.success()
-                store.stopDrive()
-            }
-            Button("Keep Driving", role: .cancel) {}
-        } message: {
-            Text("You'll be able to add conditions and notes before saving.")
         }
         .confirmationDialog("Discard this drive?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Discard Drive", role: .destructive) {
@@ -231,8 +221,9 @@ struct ActiveDriveView: View {
 
     private var stopButton: some View {
         Button {
-            Haptics.tap()
-            confirmStop = true
+            // One tap: a mistaken stop is undone with Resume on the save screen.
+            Haptics.success()
+            store.stopDrive()
         } label: {
             ZStack {
                 Circle().fill(.white.opacity(0.15)).frame(width: 112, height: 112)

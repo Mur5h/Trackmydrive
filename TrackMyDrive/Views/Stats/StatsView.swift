@@ -9,6 +9,11 @@ struct StatsView: View {
         let stats = store.stats
         let unit = store.settings.distanceUnit
         NavigationStack {
+            if stats.driveCount == 0 {
+                ContentUnavailableView("No Stats Yet", systemImage: "chart.bar.xaxis",
+                                       description: Text("Log your first drive and your totals, night hours and weekly progress show up here."))
+                    .navigationTitle("Stats")
+            } else {
             ScrollView {
                 VStack(spacing: 18) {
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
@@ -53,6 +58,7 @@ struct StatsView: View {
             }
             .screenBackground()
             .navigationTitle("Stats")
+            }
         }
     }
 

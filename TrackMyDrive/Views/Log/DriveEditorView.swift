@@ -92,6 +92,29 @@ struct DriveEditorView: View {
                 conditionsSection
                 notesSection
                 if isEdit { deleteSection }
+                if isReview {
+                    Section {
+                        Button("Discard This Drive", role: .destructive) { confirmDiscard = true }
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if isReview {
+                    // Big, thumb-reachable Save; the details above are optional.
+                    Button(action: attemptSave) {
+                        Text("Save Drive")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .disabled(validationError != nil)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.bar)
+                }
             }
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle(title)
@@ -336,22 +359,18 @@ struct DriveEditorView: View {
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if isReview {
             ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    Button("Resume Drive", systemImage: "play.fill") { store.resumeDrive() }
-                    Button("Discard Drive", systemImage: "trash", role: .destructive) { confirmDiscard = true }
-                } label: {
-                    Label("Options", systemImage: "ellipsis.circle")
-                }
+                // Text, not an icon: the toolbar would show a bare play symbol.
+                Button("Resume") { store.resumeDrive() }
             }
         } else {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
             }
-        }
-        ToolbarItem(placement: .confirmationAction) {
-            Button(isReview ? "Save" : "Done", action: attemptSave)
-                .fontWeight(.semibold)
-                .disabled(validationError != nil)
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done", action: attemptSave)
+                    .fontWeight(.semibold)
+                    .disabled(validationError != nil)
+            }
         }
         ToolbarItemGroup(placement: .keyboard) {
             Spacer()

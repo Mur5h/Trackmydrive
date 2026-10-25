@@ -362,6 +362,7 @@ final class DriveStore: ObservableObject {
         } else {
             settings.supervisors = merge(settings.supervisors, archive.settings.supervisors)
             settings.vehicles = merge(settings.vehicles, archive.settings.vehicles)
+            if !archive.drives.isEmpty { settings.hasOnboarded = true }
         }
         sortDrives()
         saveNow()
