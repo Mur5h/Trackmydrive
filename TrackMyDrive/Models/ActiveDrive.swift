@@ -20,6 +20,7 @@ struct ActiveDrive: Codable, Equatable {
     var endPlaceName: String?
     var maxSpeedMetersPerSecond: Double = 0
     var timeZoneIdentifier: String? = TimeZone.current.identifier
+    var driverID: UUID?
 
     init(startDate: Date, supervisor: String, vehicle: String) {
         self.startDate = startDate

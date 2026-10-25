@@ -24,6 +24,8 @@ struct Drive: Identifiable, Codable, Hashable {
     var route: [RoutePoint] = []
     /// Where the drive happened, so night time is always worked out in the drive's own time zone.
     var timeZoneIdentifier: String? = TimeZone.current.identifier
+    /// Which learner drove (see AppSettings.activeDriverID). nil only in old backups.
+    var driverID: UUID?
     var createdAt: Date = Date()
     var modifiedAt: Date = Date()
 
@@ -64,7 +66,7 @@ struct Drive: Identifiable, Codable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, startDate, endDate, nightMinutes, nightMinutesIsManual, supervisor, vehicle,
              distanceMeters, weather, roads, skills, notes, source, startLatitude, startLongitude,
-             startPlaceName, endPlaceName, route, timeZoneIdentifier, createdAt, modifiedAt
+             startPlaceName, endPlaceName, route, timeZoneIdentifier, driverID, createdAt, modifiedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -89,6 +91,7 @@ struct Drive: Identifiable, Codable, Hashable {
         route = (try? c.decodeIfPresent([RoutePoint].self, forKey: .route)) ?? []
         // Older drives don't have one; nil means "use the phone's time zone".
         timeZoneIdentifier = try c.decodeIfPresent(String.self, forKey: .timeZoneIdentifier)
+        driverID = try? c.decodeIfPresent(UUID.self, forKey: .driverID)
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? startDate
         modifiedAt = try c.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? createdAt
     }
@@ -114,6 +117,7 @@ struct Drive: Identifiable, Codable, Hashable {
         try c.encodeIfPresent(endPlaceName, forKey: .endPlaceName)
         if !route.isEmpty { try c.encode(route, forKey: .route) }
         try c.encodeIfPresent(timeZoneIdentifier, forKey: .timeZoneIdentifier)
+        try c.encodeIfPresent(driverID, forKey: .driverID)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(modifiedAt, forKey: .modifiedAt)
     }

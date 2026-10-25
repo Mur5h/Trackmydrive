@@ -28,7 +28,10 @@ struct LogStats {
     var nightProgress: Double { progress(nightMinutes, settings.nightGoalMinutes) }
     var totalRemainingMinutes: Double { max(0, settings.totalGoalMinutes - totalMinutes) }
     var nightRemainingMinutes: Double { max(0, settings.nightGoalMinutes - nightMinutes) }
-    var goalsComplete: Bool { totalRemainingMinutes <= 0 && nightRemainingMinutes <= 0 }
+    var hasWeatherGoal: Bool { settings.weatherGoalMinutes > 0 }
+    var weatherProgress: Double { progress(adverseWeatherMinutes, settings.weatherGoalMinutes) }
+    var weatherRemainingMinutes: Double { max(0, settings.weatherGoalMinutes - adverseWeatherMinutes) }
+    var goalsComplete: Bool { totalRemainingMinutes <= 0 && nightRemainingMinutes <= 0 && weatherRemainingMinutes <= 0 }
 
     private func progress(_ value: Double, _ goal: Double) -> Double {
         guard goal > 0 else { return value > 0 ? 1 : 0 }

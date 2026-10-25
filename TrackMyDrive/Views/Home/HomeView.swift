@@ -26,6 +26,23 @@ struct HomeView: View {
             }
             .screenBackground()
             .navigationTitle(greeting)
+            .toolbar {
+                if store.settings.allDrivers.count > 1 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Picker("Driver", selection: Binding(get: { store.settings.activeDriverID },
+                                                               set: { store.switchDriver(to: $0) })) {
+                                ForEach(store.settings.allDrivers) { Text($0.displayName).tag($0.id) }
+                            }
+                        } label: {
+                            Label(store.settings.activeProfile.displayName, systemImage: "person.2.fill")
+                                .labelStyle(.titleAndIcon)
+                        }
+                        .disabled(store.activeDrive != nil)
+                        .accessibilityLabel("Switch driver")
+                    }
+                }
+            }
             .sheet(isPresented: $showingManualEntry) {
                 DriveEditorView(mode: .new)
             }
@@ -92,6 +109,13 @@ struct HomeView: View {
                             Text("Day \(Fmt.duration(minutes: stats.dayMinutes))")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
+                        if stats.hasWeatherGoal {
+                            HStack(spacing: 6) {
+                                Image(systemName: "cloud.rain.fill").font(.caption2).foregroundStyle(.secondary)
+                                Text("Bad weather \(Fmt.duration(minutes: stats.adverseWeatherMinutes)) / \(Fmt.hoursShort(minutes: store.settings.weatherGoalMinutes))h")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                     Spacer(minLength: 0)
                 }
@@ -108,7 +132,11 @@ struct HomeView: View {
                             Text("\(Fmt.duration(minutes: stats.totalRemainingMinutes)) to go")
                                 .font(.subheadline.weight(.semibold))
                             if stats.nightRemainingMinutes > 0 {
-                                Text("incl. \(Fmt.duration(minutes: stats.nightRemainingMinutes)) at night")
+                                Text("Still need \(Fmt.duration(minutes: stats.nightRemainingMinutes)) at night")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if stats.weatherRemainingMinutes > 0 {
+                                Text("Still need \(Fmt.duration(minutes: stats.weatherRemainingMinutes)) in bad weather")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -121,6 +149,18 @@ struct HomeView: View {
                         }
                     }
                     Spacer(minLength: 0)
+                }
+
+                if let date = store.settings.earliestTestDate {
+                    HStack(spacing: 8) {
+                        Image(systemName: "calendar").foregroundStyle(.secondary)
+                        Text(date > Date()
+                             ? "Road test allowed from \(Fmt.mediumDate.string(from: date))"
+                             : "Permit held long enough for the road test")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
                 }
             }
         }

@@ -4,20 +4,37 @@ import Foundation
 /// it's readable on its own and ends with a restore block the app can import.
 enum TextLogFormatter {
     static func notesBackup(drives: [Drive], settings: AppSettings, archive: LogArchive) -> String {
+        var out: [String] = ["🚗 TrackMyDrive — Driving Log Backup", "Saved: \(Fmt.dateTime.string(from: Date()))"]
+        // One readable section per driver; the restore block below always holds everyone.
+        let profiles = archive.settings.allDrivers
+        for profile in profiles {
+            let driverDrives = profiles.count == 1 ? archive.drives : archive.drives.filter { $0.driverID == profile.id }
+            if profiles.count > 1 { out.append(""); out.append("════════ \(profile.displayName.uppercased()) ════════") }
+            out.append(contentsOf: driverSection(drives: driverDrives, settings: archive.settings.viewed(as: profile)))
+        }
+        out.append("")
+        out.append("RESTORE DATA — don't edit below this line.")
+        out.append("To recover: open TrackMyDrive ▸ Settings ▸ Restore From Backup, then paste this whole note.")
+        out.append(BackupCodec.textBlock(for: archive))
+        return out.joined(separator: "\n")
+    }
+
+    private static func driverSection(drives: [Drive], settings: AppSettings) -> [String] {
         let stats = LogStats(drives: drives, settings: settings)
         let unit = settings.distanceUnit
         var out: [String] = []
-        out.append("🚗 TrackMyDrive — Driving Log Backup")
         var who: [String] = []
         if !settings.studentName.isEmpty { who.append("Driver: \(settings.studentName)") }
         if !settings.permitNumber.isEmpty { who.append("Permit #: \(settings.permitNumber)") }
         if let state = settings.statePreset { who.append("State: \(state.name)") }
         if !who.isEmpty { out.append(who.joined(separator: " · ")) }
-        out.append("Saved: \(Fmt.dateTime.string(from: Date()))")
         out.append("")
         out.append("TOTALS")
         out.append("Total: \(Fmt.duration(minutes: stats.totalMinutes)) of \(Fmt.hoursShort(minutes: settings.totalGoalMinutes))h goal (\(Int((stats.totalProgress * 100).rounded()))%)")
         out.append("Night: \(Fmt.duration(minutes: stats.nightMinutes)) of \(Fmt.hoursShort(minutes: settings.nightGoalMinutes))h goal (\(Int((stats.nightProgress * 100).rounded()))%)")
+        if stats.hasWeatherGoal {
+            out.append("Bad weather: \(Fmt.duration(minutes: stats.adverseWeatherMinutes)) of \(Fmt.hoursShort(minutes: settings.weatherGoalMinutes))h goal")
+        }
         out.append("Day: \(Fmt.duration(minutes: stats.dayMinutes))")
         out.append("Drives: \(stats.driveCount) · Distance: \(Fmt.distance(meters: stats.distanceMeters, unit: unit))")
         out.append("")
@@ -38,11 +55,7 @@ enum TextLogFormatter {
             if !d.skills.isEmpty { out.append("    Practiced: \(d.skills.sorted { $0.rawValue < $1.rawValue }.map(\.label).joined(separator: ", "))") }
             if !d.notes.isEmpty { out.append("    Notes: \(d.notes.replacingOccurrences(of: "\n", with: " "))") }
         }
-        out.append("")
-        out.append("RESTORE DATA — don't edit below this line.")
-        out.append("To recover: open TrackMyDrive ▸ Settings ▸ Restore From Backup, then paste this whole note.")
-        out.append(BackupCodec.textBlock(for: archive))
-        return out.joined(separator: "\n")
+        return out
     }
 
     static func csv(drives: [Drive], settings: AppSettings) -> String {

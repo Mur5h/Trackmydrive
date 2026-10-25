@@ -151,7 +151,9 @@ enum PDFLogRenderer {
             ("TOTAL HOURS", Fmt.hours(minutes: stats.totalMinutes), "Goal \(Fmt.hoursShort(minutes: settings.totalGoalMinutes)) · \(Int((stats.totalProgress * 100).rounded()))%"),
             ("NIGHT HOURS", Fmt.hours(minutes: stats.nightMinutes), "Goal \(Fmt.hoursShort(minutes: settings.nightGoalMinutes)) · \(Int((stats.nightProgress * 100).rounded()))%"),
             ("DAY HOURS", Fmt.hours(minutes: stats.dayMinutes), "\(stats.driveCount) drive\(stats.driveCount == 1 ? "" : "s")"),
-            ("DISTANCE", String(format: "%.0f", unit.value(fromMeters: stats.distanceMeters)), unit.label.lowercased()),
+            stats.hasWeatherGoal
+                ? ("BAD WEATHER", Fmt.hours(minutes: stats.adverseWeatherMinutes), "Goal \(Fmt.hoursShort(minutes: settings.weatherGoalMinutes)) · \(Int((stats.weatherProgress * 100).rounded()))%")
+                : ("DISTANCE", String(format: "%.0f", unit.value(fromMeters: stats.distanceMeters)), unit.label.lowercased()),
         ]
         let gap: CGFloat = 10
         let cardWidth = (width - gap * 3) / 4

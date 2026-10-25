@@ -9,7 +9,9 @@ import CoreLocation
 final class DriveStore: ObservableObject {
     static let shared = DriveStore()
 
-    @Published private(set) var drives: [Drive] = []
+    /// Every driver's drives. Screens use `drives`, which is just the active driver's.
+    @Published private(set) var allDrives: [Drive] = []
+    var drives: [Drive] { allDrives.filter { $0.driverID == settings.activeDriverID } }
     @Published private(set) var recentlyDeleted: [DeletedDrive] = []
     @Published private(set) var activeDrive: ActiveDrive?
     @Published var settings = AppSettings() {
@@ -57,11 +59,12 @@ final class DriveStore: ObservableObject {
     @discardableResult
     func add(_ drive: Drive) -> Bool {
         var d = drive
-        d.createdAt = drives.first { $0.id == d.id }?.createdAt ?? Date()
+        d.createdAt = allDrives.first { $0.id == d.id }?.createdAt ?? Date()
         d.modifiedAt = Date()
-        drives.removeAll { $0.id == d.id }
+        if d.driverID == nil { d.driverID = settings.activeDriverID }
+        allDrives.removeAll { $0.id == d.id }
         recentlyDeleted.removeAll { $0.id == d.id }
-        drives.append(d)
+        allDrives.append(d)
         rememberNames(from: d)
         sortDrives()
         return saveNow()
@@ -69,10 +72,10 @@ final class DriveStore: ObservableObject {
 
     @discardableResult
     func update(_ drive: Drive) -> Bool {
-        guard let i = drives.firstIndex(where: { $0.id == drive.id }) else { return add(drive) }
+        guard let i = allDrives.firstIndex(where: { $0.id == drive.id }) else { return add(drive) }
         var d = drive
         d.modifiedAt = Date()
-        drives[i] = d
+        allDrives[i] = d
         rememberNames(from: d)
         sortDrives()
         return saveNow()
@@ -80,9 +83,9 @@ final class DriveStore: ObservableObject {
 
     func delete(_ ids: Set<UUID>) {
         let now = Date()
-        let removed = drives.filter { ids.contains($0.id) }
+        let removed = allDrives.filter { ids.contains($0.id) }
         guard !removed.isEmpty else { return }
-        drives.removeAll { ids.contains($0.id) }
+        allDrives.removeAll { ids.contains($0.id) }
         recentlyDeleted.removeAll { ids.contains($0.id) }
         recentlyDeleted.insert(contentsOf: removed.map { DeletedDrive(drive: $0, deletedAt: now) }, at: 0)
         saveNow()
@@ -94,8 +97,8 @@ final class DriveStore: ObservableObject {
         recentlyDeleted.removeAll { $0.id == item.id }
         var d = item.drive
         d.modifiedAt = Date()
-        drives.removeAll { $0.id == d.id }
-        drives.append(d)
+        allDrives.removeAll { $0.id == d.id }
+        allDrives.append(d)
         sortDrives()
         saveNow()
     }
@@ -110,7 +113,7 @@ final class DriveStore: ObservableObject {
         saveNow()
     }
 
-    func drive(withID id: UUID) -> Drive? { drives.first { $0.id == id } }
+    func drive(withID id: UUID) -> Drive? { allDrives.first { $0.id == id } }
 
     func computedNightMinutes(for drive: Drive) -> Double {
         NightCalculator.nightMinutes(start: drive.startDate, end: drive.endDate,
@@ -123,11 +126,11 @@ final class DriveStore: ObservableObject {
     func recalculateNightTimes() -> Int {
         writeSnapshot(suffix: "before-recalculate")
         var changed = 0
-        for i in drives.indices where !drives[i].nightMinutesIsManual {
-            let value = computedNightMinutes(for: drives[i])
-            if abs(value - drives[i].nightMinutes) > 0.01 {
-                drives[i].nightMinutes = value
-                drives[i].modifiedAt = Date()
+        for i in allDrives.indices where !allDrives[i].nightMinutesIsManual {
+            let value = computedNightMinutes(for: allDrives[i])
+            if abs(value - allDrives[i].nightMinutes) > 0.01 {
+                allDrives[i].nightMinutes = value
+                allDrives[i].modifiedAt = Date()
                 changed += 1
             }
         }
@@ -136,7 +139,7 @@ final class DriveStore: ObservableObject {
     }
 
     private func sortDrives() {
-        drives.sort { $0.startDate > $1.startDate }
+        allDrives.sort { $0.startDate > $1.startDate }
     }
 
     private func rememberNames(from drive: Drive) {
@@ -150,7 +153,8 @@ final class DriveStore: ObservableObject {
 
     func startDrive(supervisor: String, vehicle: String) {
         guard activeDrive == nil else { return }
-        let a = ActiveDrive(startDate: Date(), supervisor: supervisor, vehicle: vehicle)
+        var a = ActiveDrive(startDate: Date(), supervisor: supervisor, vehicle: vehicle)
+        a.driverID = settings.activeDriverID
         activeDrive = a
         persistActive(force: true)
         if settings.trackLocation { tracker.start() }
@@ -201,6 +205,7 @@ final class DriveStore: ObservableObject {
         d.endPlaceName = a.endPlaceName
         d.route = a.route
         d.timeZoneIdentifier = a.timeZoneIdentifier
+        d.driverID = a.driverID ?? settings.activeDriverID
         d.nightMinutes = computedNightMinutes(for: d)
         return d
     }
@@ -215,7 +220,7 @@ final class DriveStore: ObservableObject {
             if d.endPlaceName == nil { d.endPlaceName = a.endPlaceName }
         }
         guard add(d) else {
-            drives.removeAll { $0.id == d.id }
+            allDrives.removeAll { $0.id == d.id }
             return false
         }
         clearActive()
@@ -332,19 +337,26 @@ final class DriveStore: ObservableObject {
     func importArchive(_ archive: LogArchive, restoreSettings: Bool) -> ImportSummary {
         writeSnapshot(suffix: "before-restore")
         var summary = ImportSummary()
-        for incoming in archive.drives {
-            if let i = drives.firstIndex(where: { $0.id == incoming.id }) {
-                if incoming.modifiedAt > drives[i].modifiedAt {
+        // Drivers in the backup that this phone doesn't know yet.
+        let known = Set(settings.allDrivers.map(\.id))
+        for profile in archive.settings.allDrivers where !known.contains(profile.id) && !restoreSettings {
+            if archive.drives.contains(where: { $0.driverID == profile.id }) { settings.otherDrivers.append(profile) }
+        }
+        for var incoming in archive.drives {
+            // Old backups have no driver: they belong to whoever is active.
+            if incoming.driverID == nil { incoming.driverID = restoreSettings ? archive.settings.activeDriverID : settings.activeDriverID }
+            if let i = allDrives.firstIndex(where: { $0.id == incoming.id }) {
+                if incoming.modifiedAt > allDrives[i].modifiedAt {
                     // Keep the route if the backup copy (e.g. from Notes) doesn't carry one.
                     var merged = incoming
-                    if merged.route.isEmpty { merged.route = drives[i].route }
-                    drives[i] = merged
+                    if merged.route.isEmpty { merged.route = allDrives[i].route }
+                    allDrives[i] = merged
                     summary.updated += 1
                 } else {
                     summary.unchanged += 1
                 }
             } else {
-                drives.append(incoming)
+                allDrives.append(incoming)
                 recentlyDeleted.removeAll { $0.id == incoming.id }
                 summary.added += 1
             }
@@ -358,6 +370,11 @@ final class DriveStore: ObservableObject {
             s.lastNotesBackup = settings.lastNotesBackup
             s.supervisors = merge(settings.supervisors, s.supervisors)
             s.vehicles = merge(settings.vehicles, s.vehicles)
+            // Keep this phone's drivers that have drives, so none of their hours disappear from view.
+            let incomingIDs = Set(s.allDrivers.map(\.id))
+            for p in settings.allDrivers where !incomingIDs.contains(p.id) && allDrives.contains(where: { $0.driverID == p.id }) {
+                s.otherDrivers.append(p)
+            }
             settings = s
         } else {
             settings.supervisors = merge(settings.supervisors, archive.settings.supervisors)
@@ -376,7 +393,7 @@ final class DriveStore: ObservableObject {
     }
 
     var archive: LogArchive {
-        LogArchive(settings: settings, drives: drives, recentlyDeleted: recentlyDeleted)
+        LogArchive(settings: settings, drives: allDrives, recentlyDeleted: recentlyDeleted)
     }
 
     /// Drives added or edited since the last backup that left the device.
@@ -390,13 +407,53 @@ final class DriveStore: ObservableObject {
     }
 
     var changesSinceExternalBackup: Int {
-        guard let last = lastOffDeviceBackup else { return drives.count }
-        return drives.filter { $0.modifiedAt > last }.count
+        guard let last = lastOffDeviceBackup else { return allDrives.count }
+        return allDrives.filter { $0.modifiedAt > last }.count
     }
 
     func markExternalBackup(toNotes: Bool) {
         settings.lastExternalBackup = Date()
         if toNotes { settings.lastNotesBackup = Date() }
+        saveNow()
+    }
+
+    // MARK: - Drivers
+
+    /// Switches every screen, goal and export to another driver.
+    func switchDriver(to id: UUID) {
+        guard id != settings.activeDriverID, activeDrive == nil,
+              let target = settings.otherDrivers.first(where: { $0.id == id }) else { return }
+        var s = settings
+        s.otherDrivers.removeAll { $0.id == id }
+        s.otherDrivers.append(s.activeProfile)
+        s.activeProfile = target
+        settings = s
+        saveNow()
+    }
+
+    func addDriver(named name: String) {
+        var profile = settings.activeProfile
+        profile.id = UUID()
+        profile.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        profile.permitNumber = ""
+        profile.permitIssued = nil
+        settings.otherDrivers.append(profile)
+        switchDriver(to: profile.id)
+    }
+
+    /// Only drivers with no drives (including in Recently Deleted) can be removed, so no hours are lost.
+    func canRemoveDriver(_ id: UUID) -> Bool {
+        settings.allDrivers.count > 1
+            && !allDrives.contains { $0.driverID == id }
+            && !recentlyDeleted.contains { $0.drive.driverID == id }
+    }
+
+    func removeDriver(_ id: UUID) {
+        guard canRemoveDriver(id) else { return }
+        if id == settings.activeDriverID, let next = settings.otherDrivers.first {
+            switchDriver(to: next.id)
+        }
+        settings.otherDrivers.removeAll { $0.id == id }
         saveNow()
     }
 
@@ -536,7 +593,7 @@ final class DriveStore: ObservableObject {
     }
 
     func writeSnapshot(suffix: String?) {
-        guard !writesBlocked, !drives.isEmpty || !recentlyDeleted.isEmpty else { return }
+        guard !writesBlocked, !allDrives.isEmpty || !recentlyDeleted.isEmpty else { return }
         let dir = StorePaths.snapshotsDirectory
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -570,6 +627,7 @@ final class DriveStore: ObservableObject {
         let primary = StorePaths.primaryLog
         var loaded: LogArchive?
         var recoveredFrom: String?
+        var migratedDrivers = false
         var damaged: LogArchive?
 
         if fm.fileExists(atPath: primary.path) {
@@ -630,9 +688,20 @@ final class DriveStore: ObservableObject {
 
         if let loaded {
             settings = loaded.settings
-            drives = loaded.drives.sorted { $0.startDate > $1.startDate }
+            allDrives = loaded.drives.sorted { $0.startDate > $1.startDate }
+            // Drives from before multiple drivers existed (or whose driver is unknown) go to the active driver,
+            // so no drive is ever hidden.
+            let known = Set(settings.allDrivers.map(\.id))
+            for i in allDrives.indices where allDrives[i].driverID.map({ !known.contains($0) }) ?? true {
+                allDrives[i].driverID = settings.activeDriverID
+                migratedDrivers = true
+            }
             let cutoff = Calendar.current.date(byAdding: .day, value: -Self.trashRetentionDays, to: Date()) ?? .distantPast
             recentlyDeleted = loaded.recentlyDeleted.filter { $0.deletedAt > cutoff }
+            for i in recentlyDeleted.indices where recentlyDeleted[i].drive.driverID.map({ !known.contains($0) }) ?? true {
+                recentlyDeleted[i].drive.driverID = settings.activeDriverID
+                migratedDrivers = true
+            }
         }
 
         if let data = try? Data(contentsOf: StorePaths.activeDrive),
@@ -640,8 +709,8 @@ final class DriveStore: ObservableObject {
             activeDrive = a
         }
 
-        if recoveredFrom != nil {
-            // Re-create the primary file from the recovered copy.
+        if recoveredFrom != nil || migratedDrivers {
+            // Re-create the primary file from the recovered copy (or save the driver migration).
             DispatchQueue.main.async { [weak self] in self?.saveNow() }
         }
     }

@@ -75,6 +75,7 @@ struct OnboardingView: View {
     private func finish() {
         var s = store.settings
         s.studentName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let preset = StatePreset.all.first(where: { $0.code == stateCode }) { preset.apply(to: &s) }
         s.stateCode = stateCode
         s.totalGoalHours = totalGoal
         s.nightGoalHours = nightGoal

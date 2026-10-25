@@ -7,6 +7,9 @@ struct SettingsView: View {
     @State private var confirmRecalc = false
     @State private var confirmDeleteAll = false
     @State private var notificationsDenied = false
+    @State private var addingDriver = false
+    @State private var newDriverName = ""
+    @State private var confirmRemoveDriver = false
 
     var body: some View {
         NavigationStack {
@@ -33,6 +36,20 @@ struct SettingsView: View {
             } message: {
                 Text("Allow notifications for TrackMyDrive in the Settings app to get practice reminders.")
             }
+            .alert("Add a Driver", isPresented: $addingDriver) {
+                TextField("Name", text: $newDriverName)
+                Button("Add") {
+                    let name = newDriverName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !name.isEmpty { store.addDriver(named: name) }
+                    newDriverName = ""
+                }
+                Button("Cancel", role: .cancel) { newDriverName = "" }
+            } message: {
+                Text("Each driver has their own log, goals and PDF. Switch drivers here or from the Home screen.")
+            }
+            .confirmationDialog("Remove \(store.settings.activeProfile.displayName)?", isPresented: $confirmRemoveDriver, titleVisibility: .visible) {
+                Button("Remove Driver", role: .destructive) { store.removeDriver(store.settings.activeDriverID) }
+            }
             .confirmationDialog("Delete all drives?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
                 Button("Delete All \(store.drives.count) Drives", role: .destructive) { store.deleteAll() }
             } message: {
@@ -44,7 +61,14 @@ struct SettingsView: View {
     // MARK: Sections
 
     private var driverSection: some View {
-        Section("Driver") {
+        Section {
+            if store.settings.allDrivers.count > 1 {
+                Picker("Current Driver", selection: Binding(get: { store.settings.activeDriverID },
+                                                           set: { store.switchDriver(to: $0) })) {
+                    ForEach(store.settings.allDrivers) { Text($0.displayName).tag($0.id) }
+                }
+                .disabled(store.activeDrive != nil)
+            }
             LabeledContent("Name") {
                 TextField("Your name", text: $store.settings.studentName)
                     .multilineTextAlignment(.trailing)
@@ -55,6 +79,17 @@ struct SettingsView: View {
                     .multilineTextAlignment(.trailing)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.characters)
+            }
+            Button("Add Another Driver…") { addingDriver = true }
+                .disabled(store.activeDrive != nil)
+            if store.canRemoveDriver(store.settings.activeDriverID) {
+                Button("Remove This Driver", role: .destructive) { confirmRemoveDriver = true }
+            }
+        } header: {
+            Text("Driver")
+        } footer: {
+            if store.settings.allDrivers.count > 1 {
+                Text("Each driver has their own drives, goals and PDF log. Backups always include every driver.")
             }
         }
     }
@@ -73,6 +108,23 @@ struct SettingsView: View {
             Stepper(value: $store.settings.nightGoalHours, in: 0...100, step: 1) {
                 LabeledContent("Night hours", value: "\(Int(store.settings.nightGoalHours))")
             }
+            Stepper(value: $store.settings.weatherGoalHours, in: 0...50, step: 1) {
+                LabeledContent("Bad-weather hours", value: store.settings.weatherGoalHours > 0 ? "\(Int(store.settings.weatherGoalHours))" : "None")
+            }
+            Toggle("I know my permit date", isOn: Binding(
+                get: { store.settings.permitIssued != nil },
+                set: { store.settings.permitIssued = $0 ? Calendar.current.startOfDay(for: Date()) : nil }))
+            if store.settings.permitIssued != nil {
+                DatePicker("Permit issued", selection: Binding(get: { store.settings.permitIssued ?? Date() },
+                                                               set: { store.settings.permitIssued = $0 }),
+                           in: ...Date(), displayedComponents: .date)
+                Stepper(value: $store.settings.minPermitMonths, in: 0...24) {
+                    LabeledContent("Hold permit for", value: store.settings.minPermitMonths > 0 ? "\(store.settings.minPermitMonths) months" : "No minimum")
+                }
+                if let date = store.settings.earliestTestDate {
+                    LabeledContent("Earliest road test", value: Fmt.mediumDate.string(from: date))
+                }
+            }
         } header: {
             Text("Requirements")
         } footer: {
@@ -84,10 +136,12 @@ struct SettingsView: View {
         Binding(
             get: { store.settings.stateCode },
             set: { code in
-                store.settings.stateCode = code
                 if let preset = StatePreset.all.first(where: { $0.code == code }) {
-                    store.settings.totalGoalHours = preset.totalHours
-                    store.settings.nightGoalHours = preset.nightHours
+                    var s = store.settings
+                    preset.apply(to: &s)
+                    store.settings = s
+                } else {
+                    store.settings.stateCode = code
                 }
             }
         )
