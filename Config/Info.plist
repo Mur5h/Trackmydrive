@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TrackMyDrive uses your location during a drive to measure distance, draw your route, and work out how much of the drive happened after sunset.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>TrackMyDrive keeps measuring your drive while the screen is locked so your distance and route stay accurate.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>
